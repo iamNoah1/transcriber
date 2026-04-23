@@ -146,13 +146,15 @@ All routes under `/api/`. All job routes require a valid session cookie; unauthe
 
 1. `UPDATE jobs SET status='running', started_at=now(), message='Preparing…'`.
 2. Dispatch on `input_kind`:
-   - **`urls`** — exec `audiotap url1 url2 … --output-dir input/ --format opus --workers 2`. Stream stdout, update `message` as `"Downloaded N/M audio files"`. YouTube playlist URLs expand transparently inside `yt-dlp` → `audiotap`.
-   - **`files`** — already on disk under `input/`.
-3. Exec `whisperbatch -i input/ -o output/ -f txt [-f srt …] [-m model] [--overwrite]`. Stream stderr; surface progress lines as `message`.
-4. Count files in `output/`. If one file: `result_path = output/{stem}.{first_format}`. If many: zip `output/` → `result.zip`, set `result_path` to the zip.
-5. `UPDATE jobs SET status='done', finished_at=now(), result_path=..., file_count=...`.
+   - **`urls`** — `message='Downloading audio…'`. Exec `audiotap url1 url2 … --output-dir input/ --format opus --workers 2`. Wait for completion. YouTube playlist URLs expand transparently inside `yt-dlp` → `audiotap`. After the process exits, list `input/` to know how many audio files were produced; update `message` to `"Transcribing N file(s)…"`. (Parsing audiotap stdout for precise per-file progress is deferred — the tool's stdout is primarily a summary and yt-dlp noise.)
+   - **`files`** — already on disk under `input/`. `message='Transcribing N file(s)…'`.
+3. Exec `whisperbatch -i input/ -o output/ -f txt [-f srt …] [-m model] [--overwrite]`. Stream stderr so the process is responsive to cancel signals; the human-readable `message` stays at `"Transcribing N file(s)…"` for v1 (fine-grained per-file progress is deferred).
+4. List output files. Let `output_count = len(files in output/)`. If `output_count == 1`, `result_path = <that file>`. Otherwise zip all of `output/` → `result.zip`, `result_path = result.zip`.
+5. `UPDATE jobs SET status='done', finished_at=now(), result_path=..., file_count=output_count`.
 6. Delete `input/` to reclaim disk; keep `output/` and `result.zip`.
 7. On any exception: `status='failed'`, `message=str(e)[:500]`. Keep whatever was produced for post-mortem.
+
+> `file_count` in the DB is the **number of output transcript files** produced, not the number of inputs. Jobs with one URL + three formats have `file_count=3`.
 
 **Concurrency:** single worker thread. A second submitted job sits in `queued`; frontend shows it as such. This is a deliberate v1 simplification.
 
@@ -198,7 +200,7 @@ Pattern referenced from `autonomo_llc_finance/server/_core/oauth.ts`, ported to 
 **Pages:**
 
 - `/login` — single "Sign in with Pocket ID" button → `window.location = "/api/auth/login"`.
-- `/` (Home) — drag-and-drop zone (React-dropzone or HTML File API) + URL textarea (one URL per line) + format checkboxes + optional model dropdown + "Transcribe" button. On submit: `POST /api/jobs`, redirect to `/jobs/{id}`.
+- `/` (Home) — drag-and-drop zone (`react-dropzone`) + URL textarea (one URL per line) + format checkboxes + optional model dropdown + "Transcribe" button. On submit: `POST /api/jobs`, redirect to `/jobs/{id}`.
 - `/jobs` — table/list of jobs, newest first, with status badges and row-level "Download" / "Delete" actions.
 - `/jobs/{id}` — detail view. Polls `GET /api/jobs/{id}` every 2 seconds while status is `queued` or `running`. Shows `message`, input list, timings. When `done`: a "Download" button links to `/api/jobs/{id}/download`.
 
