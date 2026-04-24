@@ -147,3 +147,44 @@ async def create_file_job(
         submit(job_id)
     row = await db.get_job(job_id)
     return _row_to_response(row)
+
+
+@router.get("", response_model=list[JobResponse])
+async def list_jobs(request: Request, user: dict = Depends(current_user)):
+    db: Database = request.app.state.db
+    rows = await db.list_jobs(user["open_id"])
+    return [_row_to_response(r) for r in rows]
+
+
+@router.get("/{job_id}", response_model=JobResponse)
+async def get_job(job_id: str, request: Request, user: dict = Depends(current_user)):
+    db: Database = request.app.state.db
+    row = await db.get_job(job_id)
+    if not row or row["user_id"] != user["open_id"]:
+        raise HTTPException(status_code=404, detail="not found")
+    return _row_to_response(row)
+
+
+@router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(job_id: str, request: Request, user: dict = Depends(current_user)):
+    db: Database = request.app.state.db
+    storage: Storage = request.app.state.storage
+    row = await db.get_job(job_id)
+    if not row or row["user_id"] != user["open_id"]:
+        raise HTTPException(status_code=404, detail="not found")
+    storage.delete_job(job_id)
+    await db.delete_job(job_id)
+
+
+@router.get("/{job_id}/download")
+async def download_job(job_id: str, request: Request, user: dict = Depends(current_user)):
+    db: Database = request.app.state.db
+    row = await db.get_job(job_id)
+    if not row or row["user_id"] != user["open_id"]:
+        raise HTTPException(status_code=404, detail="not found")
+    if row["status"] != "done" or not row["result_path"]:
+        raise HTTPException(status_code=409, detail="job not complete")
+    path = Path(row["result_path"])
+    if not path.is_file():
+        raise HTTPException(status_code=410, detail="result missing")
+    return FileResponse(path, filename=path.name)
