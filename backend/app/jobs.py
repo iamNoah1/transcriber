@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -92,6 +92,56 @@ async def create_url_job(
         options_json=payload.options.model_dump_json(),
     )
     storage.create_job_dirs(job_id)
+    submit = getattr(request.app.state, "submit_job", None)
+    if submit:
+        submit(job_id)
+    row = await db.get_job(job_id)
+    return _row_to_response(row)
+
+
+@router.post("/files", status_code=201, response_model=JobResponse)
+async def create_file_job(
+    request: Request,
+    files: Annotated[list[UploadFile], File()],
+    options_json: Annotated[str, Form()],
+    user: dict = Depends(current_user),
+):
+    if not files:
+        raise HTTPException(status_code=422, detail="no files uploaded")
+    try:
+        options = Options.model_validate_json(options_json)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"invalid options: {e}") from e
+
+    db: Database = request.app.state.db
+    storage: Storage = request.app.state.storage
+    await db.upsert_user(open_id=user["open_id"], name=user.get("name"), email=None)
+
+    job_id = await db.insert_job(
+        user_id=user["open_id"],
+        input_kind="files",
+        inputs_json=json.dumps([storage.sanitise_filename(f.filename or "upload") for f in files]),
+        options_json=options.model_dump_json(),
+    )
+    paths = storage.create_job_dirs(job_id)
+
+    total = 0
+    per_limit = request.app.state.settings.max_upload_mb * 1024 * 1024
+    total_limit = request.app.state.settings.max_total_upload_mb * 1024 * 1024
+    for f in files:
+        name = storage.sanitise_filename(f.filename or "upload")
+        dest = paths.input / name
+        written = 0
+        with dest.open("wb") as out:
+            while chunk := await f.read(1 << 20):
+                written += len(chunk)
+                total += len(chunk)
+                if written > per_limit:
+                    raise HTTPException(status_code=413, detail=f"file '{name}' exceeds per-file limit")
+                if total > total_limit:
+                    raise HTTPException(status_code=413, detail="total upload exceeds limit")
+                out.write(chunk)
+
     submit = getattr(request.app.state, "submit_job", None)
     if submit:
         submit(job_id)
