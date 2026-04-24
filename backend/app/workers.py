@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.db import Database
 from app.providers.base import TranscriptionProvider
@@ -87,3 +87,24 @@ class Worker:
 
     def shutdown(self) -> None:
         self.pool.shutdown(wait=False, cancel_futures=True)
+
+
+async def purge_expired(db: Database, storage: Storage, retention_days: int) -> int:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat(timespec="seconds")
+    expired = await db.expired_jobs(cutoff)
+    for row in expired:
+        storage.delete_job(row["id"])
+        await db.delete_job(row["id"])
+    return len(expired)
+
+
+def start_retention_loop(db: Database, storage: Storage, retention_days: int, interval_hours: int = 6) -> asyncio.Task:
+    async def _loop():
+        while True:
+            try:
+                await purge_expired(db, storage, retention_days)
+            except Exception as e:  # noqa: BLE001
+                print(f"[retention] failed: {e}")
+            await asyncio.sleep(interval_hours * 3600)
+
+    return asyncio.create_task(_loop())

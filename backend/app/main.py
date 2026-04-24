@@ -6,7 +6,7 @@ from app.db import Database
 from app.jobs import router as jobs_router
 from app.providers.local import LocalProvider
 from app.storage import Storage
-from app.workers import JobRunner, Worker
+from app.workers import JobRunner, Worker, start_retention_loop
 
 
 def create_app() -> FastAPI:
@@ -31,9 +31,15 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup() -> None:
         await db.init()
+        app.state.retention_task = start_retention_loop(
+            db, app.state.storage, settings.job_retention_days
+        )
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
+        task = getattr(app.state, "retention_task", None)
+        if task:
+            task.cancel()
         worker.shutdown()
 
     register_oauth_routes(app, settings)
