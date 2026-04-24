@@ -1,9 +1,17 @@
+import os
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+# Ensure required settings are present at module-import time so that
+# `from app.main import create_app` (which instantiates `app` at module level)
+# can read env vars. Per-test fixtures still override these values via monkeypatch.
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("OWNER_OPEN_ID", "dev")
+os.environ.setdefault("AUTH_DISABLED", "true")
+
+from app.main import create_app  # noqa: E402
 
 
 @pytest.fixture()

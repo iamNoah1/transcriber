@@ -56,3 +56,75 @@ def test_valid_session_cookie_is_accepted(monkeypatch: pytest.MonkeyPatch):
     r = client.get("/whoami", cookies={s.session_cookie_name: token})
     assert r.status_code == 200
     assert r.json() == {"open_id": "owner", "name": "O"}
+
+
+# append below existing tests in backend/tests/test_auth.py
+
+from unittest.mock import AsyncMock, patch
+
+from app.auth import register_oauth_routes
+from app.db import Database
+
+
+@pytest.fixture()
+def oidc_app(monkeypatch: pytest.MonkeyPatch, tmp_path):
+    import asyncio
+
+    monkeypatch.setenv("JWT_SECRET", "x")
+    monkeypatch.setenv("OWNER_OPEN_ID", "owner-sub")
+    monkeypatch.setenv("AUTH_DISABLED", "false")
+    monkeypatch.setenv("OIDC_ISSUER_URL", "https://id.example")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "c")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "s")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    from fastapi import FastAPI
+    app = FastAPI()
+    s = Settings()
+    install_auth(app, s)
+    db = Database(s.db_path)
+    asyncio.run(db.init())
+    app.state.db = db
+    register_oauth_routes(app, s)
+    return app, s, db
+
+
+def test_login_redirects_to_issuer(oidc_app):
+    app, s, _ = oidc_app
+    client = TestClient(app)
+    meta = {
+        "authorization_endpoint": "https://id.example/authorize",
+        "token_endpoint": "https://id.example/token",
+        "userinfo_endpoint": "https://id.example/userinfo",
+    }
+    with patch("app.auth._oidc_metadata", new=AsyncMock(return_value=meta)):
+        r = client.get("/api/auth/login", follow_redirects=False)
+    assert r.status_code == 302
+    assert "id.example" in r.headers["location"]
+    assert "code_challenge_method=S256" in r.headers["location"]
+
+
+def test_callback_rejects_non_owner(oidc_app):
+    app, s, _ = oidc_app
+    client = TestClient(app)
+    with patch("app.auth._exchange_and_userinfo", new=AsyncMock(return_value={"sub": "stranger", "name": "S"})):
+        # Also set the state+verifier cookies to simulate a valid round-trip
+        r = client.get(
+            "/api/auth/callback?code=c&state=s",
+            cookies={"tc_oidc_state": "s", "tc_oidc_verifier": "v"},
+            follow_redirects=False,
+        )
+    assert r.status_code == 403
+
+
+def test_callback_accepts_owner_and_sets_cookie(oidc_app):
+    app, s, db = oidc_app
+    client = TestClient(app)
+    with patch("app.auth._exchange_and_userinfo", new=AsyncMock(return_value={"sub": "owner-sub", "name": "O", "email": "o@x"})):
+        r = client.get(
+            "/api/auth/callback?code=c&state=s",
+            cookies={"tc_oidc_state": "s", "tc_oidc_verifier": "v"},
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    assert r.headers["location"] == "/"
+    assert s.session_cookie_name in r.cookies
