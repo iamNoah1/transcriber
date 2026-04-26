@@ -49,6 +49,11 @@ class JobRunner:
             )
 
             outputs = sorted(p for p in paths.output.iterdir() if p.is_file())
+            if not outputs:
+                raise RuntimeError(
+                    "Transcription produced no output files. "
+                    "Check that the audio format is supported (wav, mp3, m4a, flac, ogg)."
+                )
             if len(outputs) == 1:
                 result_path = outputs[0]
                 file_count = 1

@@ -24,7 +24,7 @@ export default function Jobs() {
     <main className="min-h-screen p-8 max-w-3xl mx-auto space-y-4">
       <header className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold">Jobs</h1>
-        <Link to="/" className="text-sm text-slate-600 underline">New</Link>
+        <Link to="/" className="text-sm text-slate-600 hover:text-slate-900">+ New transcription</Link>
       </header>
       {jobs.length === 0 ? (
         <p className="text-slate-600">No jobs yet.</p>

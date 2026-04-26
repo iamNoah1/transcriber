@@ -5,7 +5,7 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 COPY web/package.json web/pnpm-lock.yaml* ./
 RUN pnpm install --frozen-lockfile || pnpm install
 COPY web/ ./
-RUN pnpm build
+RUN pnpm exec vite build
 
 # ---- Stage 2: runtime ----
 FROM python:3.12-slim AS runtime

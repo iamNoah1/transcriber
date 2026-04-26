@@ -81,3 +81,26 @@ async def test_run_job_marks_failed_on_exception(tmp_path: Path):
     row = await db.get_job(job_id)
     assert row["status"] == "failed"
     assert "boom" in row["message"]
+
+
+@pytest.mark.asyncio()
+async def test_run_job_fails_when_provider_writes_no_output(tmp_path: Path):
+    """Transcriber exits cleanly but writes nothing (e.g. unsupported format) → failed, not done."""
+    class SilentProvider(FakeProvider):
+        def transcribe(self, *a, **kw):
+            pass  # writes nothing to output_dir
+
+    db = Database(tmp_path / "db.sqlite"); await db.init()
+    await db.upsert_user(open_id="u", name=None, email=None)
+    storage = Storage(tmp_path)
+    runner = JobRunner(db=db, storage=storage, provider=SilentProvider())
+    job_id = await db.insert_job(
+        user_id="u", input_kind="urls",
+        inputs_json=json.dumps(["https://youtu.be/a"]),
+        options_json=json.dumps({"formats": ["txt"], "model": None}),
+    )
+    storage.create_job_dirs(job_id)
+    await asyncio.get_event_loop().run_in_executor(None, runner.run_job, job_id)
+    row = await db.get_job(job_id)
+    assert row["status"] == "failed"
+    assert "no output files" in row["message"].lower()
