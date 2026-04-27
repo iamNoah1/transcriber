@@ -16,18 +16,22 @@ function fmtDate(iso: string | null) {
   return new Date(iso).toLocaleString();
 }
 
-function fmtDuration(a: string | null, b: string | null) {
-  if (!a || !b) return null;
-  const ms = new Date(b).getTime() - new Date(a).getTime();
+function fmtDurationMs(ms: number) {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
   return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+}
+
+function fmtDuration(a: string | null, b: string | null) {
+  if (!a || !b) return null;
+  return fmtDurationMs(new Date(b).getTime() - new Date(a).getTime());
 }
 
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!id) return;
@@ -48,10 +52,20 @@ export default function JobDetail() {
     return () => { cancelled = true; };
   }, [id]);
 
+  // Tick every second so the elapsed-time counter updates smoothly while running.
+  useEffect(() => {
+    if (!job || (job.status !== "running" && job.status !== "queued")) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [job?.status]);
+
   if (error) {
     return (
       <main className="min-h-screen p-8 max-w-3xl mx-auto space-y-4">
-        <Link to="/jobs" className="text-sm text-slate-600 hover:text-slate-900">← All jobs</Link>
+        <header className="flex items-baseline justify-between">
+          <Link to="/jobs" className="text-sm text-slate-600 hover:text-slate-900">← All jobs</Link>
+          <Link to="/" className="text-sm text-slate-600 hover:text-slate-900">+ New transcription</Link>
+        </header>
         <p className="text-red-600 text-sm">{error}</p>
       </main>
     );
@@ -61,10 +75,17 @@ export default function JobDetail() {
 
   const style = STATUS_STYLES[job.status];
   const duration = fmtDuration(job.started_at, job.finished_at);
+  const isActive = job.status === "queued" || job.status === "running";
+  const elapsed = isActive && job.started_at
+    ? fmtDurationMs(now - new Date(job.started_at).getTime())
+    : null;
 
   return (
     <main className="min-h-screen p-8 max-w-3xl mx-auto space-y-4">
-      <Link to="/jobs" className="text-sm text-slate-600 hover:text-slate-900">← All jobs</Link>
+      <header className="flex items-baseline justify-between">
+        <Link to="/jobs" className="text-sm text-slate-600 hover:text-slate-900">← All jobs</Link>
+        <Link to="/" className="text-sm text-slate-600 hover:text-slate-900">+ New transcription</Link>
+      </header>
 
       <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
 
@@ -92,18 +113,41 @@ export default function JobDetail() {
         </div>
 
         {/* Live message / log */}
-        {job.message && (
-          <div className={`rounded-lg border px-4 py-3 text-sm ${
+        {(job.message || isActive) && (
+          <div className={`rounded-lg border px-4 py-3 text-sm space-y-2 ${
             job.status === "failed"
               ? "bg-red-50 border-red-200 text-red-700"
-              : job.status === "running"
+              : isActive
               ? "bg-blue-50 border-blue-200 text-blue-800"
               : "bg-slate-50 border-slate-200 text-slate-600"
           }`}>
-            {job.status === "running" && (
-              <span className="mr-2 inline-block w-3 h-3 rounded-full bg-blue-400 animate-pulse align-middle" />
+            <div className="flex items-center gap-2">
+              {job.status === "running" && (
+                <span className="inline-block w-3 h-3 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+              )}
+              <span className="flex-1 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+                {job.message || (job.status === "queued" ? "Queued — waiting for a worker…" : "")}
+              </span>
+              {(job.progress != null || elapsed) && (
+                <span className="text-xs font-mono text-blue-600/70 flex-shrink-0 tabular-nums">
+                  {job.progress != null && <>{job.progress}%</>}
+                  {job.progress != null && elapsed && <span className="mx-1 opacity-60">·</span>}
+                  {elapsed}
+                </span>
+              )}
+            </div>
+            {isActive && (
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100 text-blue-400">
+                {job.progress != null ? (
+                  <div
+                    className="h-full bg-current rounded-full transition-[width] duration-300 ease-out"
+                    style={{ width: `${Math.min(100, Math.max(0, job.progress))}%` }}
+                  />
+                ) : (
+                  <div className="indeterminate-bar h-full" />
+                )}
+              </div>
             )}
-            {job.message}
           </div>
         )}
 

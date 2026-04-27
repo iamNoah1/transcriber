@@ -4,3 +4,17 @@
 
 html, body, #root { height: 100%; }
 body { @apply bg-slate-50 text-slate-900 antialiased; }
+
+@keyframes indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.indeterminate-bar::after {
+  content: "";
+  display: block;
+  width: 25%;
+  height: 100%;
+  background: currentColor;
+  border-radius: 9999px;
+  animation: indeterminate 1.4s ease-in-out infinite;
+}

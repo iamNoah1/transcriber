@@ -1,3 +1,5 @@
+import logging
+import logging.config
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -13,8 +15,37 @@ from app.storage import Storage
 from app.workers import JobRunner, Worker, start_retention_loop
 
 
+def _configure_logging(level: str) -> None:
+    logging.config.dictConfig({
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s %(levelname)-8s %(name)s  %(message)s",
+                "datefmt": "%Y-%m-%dT%H:%M:%S",
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+            }
+        },
+        "root": {"handlers": ["console"], "level": level.upper()},
+        # Quieten noisy uvicorn access log so job logs stand out
+        "loggers": {
+            "uvicorn.access": {"level": "WARNING"},
+        },
+    })
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
+    _configure_logging(settings.log_level)
+
+    log = logging.getLogger(__name__)
+    log.info("Starting transcribe-cloud (env=%s, storage=%s)", settings.env, settings.storage_dir)
+
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -35,12 +66,14 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup() -> None:
         await db.init()
+        log.info("Database ready: %s", settings.db_path)
         app.state.retention_task = start_retention_loop(
             db, app.state.storage, settings.job_retention_days
         )
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
+        log.info("Shutting down")
         task = getattr(app.state, "retention_task", None)
         if task:
             task.cancel()

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   inputs_json  TEXT NOT NULL,
   options_json TEXT NOT NULL,
   message      TEXT,
+  progress     INTEGER,
   result_path  TEXT,
   file_count   INTEGER,
   created_at   TEXT NOT NULL,
@@ -47,6 +48,11 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         async with self.connect() as conn:
             await conn.executescript(SCHEMA)
+            # Idempotent migration: add columns introduced after the original schema.
+            cur = await conn.execute("PRAGMA table_info(jobs)")
+            cols = {row["name"] for row in await cur.fetchall()}
+            if "progress" not in cols:
+                await conn.execute("ALTER TABLE jobs ADD COLUMN progress INTEGER")
             await conn.commit()
 
     @contextlib.asynccontextmanager

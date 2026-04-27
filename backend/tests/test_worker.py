@@ -14,11 +14,11 @@ class FakeProvider:
         self.downloads: list[tuple[list[str], Path]] = []
         self.transcribes: list[tuple[Path, Path, list[str], str | None]] = []
 
-    def download_urls(self, urls, input_dir: Path):
+    def download_urls(self, urls, input_dir: Path, *, on_output=None):
         self.downloads.append((urls, input_dir))
         (input_dir / f"{urls[0].split('/')[-1]}.opus").write_bytes(b"\x00")
 
-    def transcribe(self, input_dir: Path, output_dir: Path, *, formats, model):
+    def transcribe(self, input_dir: Path, output_dir: Path, *, formats, model, on_output=None):
         self.transcribes.append((input_dir, output_dir, formats, model))
         for audio in input_dir.iterdir():
             for fmt in formats:

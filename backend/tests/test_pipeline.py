@@ -20,11 +20,11 @@ from app.workers import JobRunner
 class _FakeProvider:
     """Simulates successful transcription by writing stub text files."""
 
-    def download_urls(self, urls: list[str], input_dir: Path) -> None:
+    def download_urls(self, urls: list[str], input_dir: Path, *, on_output=None) -> None:
         for i, _ in enumerate(urls):
             (input_dir / f"audio_{i}.opus").write_bytes(b"\x00")
 
-    def transcribe(self, input_dir: Path, output_dir: Path, *, formats, model) -> None:
+    def transcribe(self, input_dir: Path, output_dir: Path, *, formats, model, on_output=None) -> None:
         for audio in sorted(input_dir.iterdir()):
             if audio.is_file():
                 for fmt in formats:
@@ -34,7 +34,7 @@ class _FakeProvider:
 class _SilentProvider(_FakeProvider):
     """Simulates a transcriber that exits cleanly but produces no output (e.g. unsupported format)."""
 
-    def transcribe(self, input_dir: Path, output_dir: Path, *, formats, model) -> None:
+    def transcribe(self, input_dir: Path, output_dir: Path, *, formats, model, on_output=None) -> None:
         pass  # writes nothing → must trigger the empty-output guard
 
 

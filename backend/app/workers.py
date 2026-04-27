@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -9,9 +12,19 @@ from app.db import Database
 from app.providers.base import TranscriptionProvider
 from app.storage import Storage
 
+log = logging.getLogger(__name__)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+_PERCENT_RE = re.compile(r"\b(\d{1,3})%")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _strip_ansi(s: str) -> str:
+    return _ANSI_RE.sub("", s)
 
 
 class JobRunner:
@@ -25,27 +38,70 @@ class JobRunner:
     def _run(self, coro):
         return asyncio.run(coro)
 
+    def _progress_writer(self, job_id: str, phase: str):
+        # Throttled callback: parses NN% out of each progress line, mirrors a
+        # cleaned-up version into `message`, and writes progress to the DB at
+        # most twice per second. Errors during write are swallowed so a
+        # transient hiccup never aborts the underlying transcription.
+        state = {"last_t": 0.0}
+
+        def on_output(line: str) -> None:
+            now = time.monotonic()
+            if now - state["last_t"] < 0.5:
+                return
+            cleaned = _strip_ansi(line).strip()
+            if not cleaned:
+                return
+            updates: dict = {"message": f"{phase}: {cleaned}"[:400]}
+            m = _PERCENT_RE.search(cleaned)
+            if m:
+                v = int(m.group(1))
+                if 0 <= v <= 100:
+                    updates["progress"] = v
+            state["last_t"] = now
+            try:
+                self._run(self.db.update_job(job_id, **updates))
+            except Exception:  # noqa: BLE001 — transient DB hiccup must not kill the job
+                pass
+
+        return on_output
+
     def run_job(self, job_id: str) -> None:
+        log.info("[job:%s] starting", job_id)
         try:
-            self._run(self.db.update_job(job_id, status="running", started_at=_now(), message="Preparing…"))
+            self._run(self.db.update_job(
+                job_id, status="running", started_at=_now(),
+                message="Preparing…", progress=None,
+            ))
             row = self._run(self.db.get_job(job_id))
             if row is None:
+                log.warning("[job:%s] not found in DB, aborting", job_id)
                 return
             paths = self.storage.job_paths(job_id)
             options = json.loads(row["options_json"])
             inputs = json.loads(row["inputs_json"])
 
             if row["input_kind"] == "urls":
-                self._run(self.db.update_job(job_id, message="Downloading audio…"))
-                self.provider.download_urls(inputs, paths.input)
+                log.info("[job:%s] downloading %d URL(s)", job_id, len(inputs))
+                self._run(self.db.update_job(job_id, message="Downloading audio…", progress=None))
+                self.provider.download_urls(
+                    inputs, paths.input,
+                    on_output=self._progress_writer(job_id, "Downloading"),
+                )
+                log.info("[job:%s] download complete", job_id)
 
             count_in = sum(1 for _ in paths.input.iterdir() if _.is_file())
-            self._run(self.db.update_job(job_id, message=f"Transcribing {count_in} file(s)…"))
+            log.info("[job:%s] transcribing %d file(s), formats=%s, model=%s",
+                     job_id, count_in, options["formats"], options.get("model"))
+            self._run(self.db.update_job(
+                job_id, message=f"Transcribing {count_in} file(s)…", progress=None,
+            ))
             self.provider.transcribe(
                 paths.input,
                 paths.output,
                 formats=options["formats"],
                 model=options.get("model"),
+                on_output=self._progress_writer(job_id, "Transcribing"),
             )
 
             outputs = sorted(p for p in paths.output.iterdir() if p.is_file())
@@ -62,21 +118,24 @@ class JobRunner:
                 file_count = len(outputs)
 
             self.storage.clear_input(job_id)
+            log.info("[job:%s] done — %d output file(s) at %s", job_id, file_count, result_path)
 
             self._run(self.db.update_job(
                 job_id,
                 status="done",
                 finished_at=_now(),
                 message=None,
+                progress=100,
                 result_path=str(result_path),
                 file_count=file_count,
             ))
         except Exception as e:  # noqa: BLE001 — top-level worker guard
+            log.exception("[job:%s] failed: %s", job_id, e)
             self._run(self.db.update_job(
                 job_id,
                 status="failed",
                 finished_at=_now(),
-                message=str(e)[:500],
+                message=str(e)[:4000],
             ))
 
 

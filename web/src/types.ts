@@ -12,6 +12,7 @@ export interface Job {
   inputs: string[];
   options: JobOptions;
   message: string | null;
+  progress: number | null;
   file_count: number | null;
   created_at: string;
   started_at: string | null;

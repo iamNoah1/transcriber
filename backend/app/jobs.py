@@ -52,6 +52,7 @@ class JobResponse(BaseModel):
     inputs: list[str]
     options: Options
     message: str | None = None
+    progress: int | None = None
     file_count: int | None = None
     created_at: str
     started_at: str | None = None
@@ -66,6 +67,7 @@ def _row_to_response(row: dict) -> JobResponse:
         inputs=json.loads(row["inputs_json"]),
         options=Options(**json.loads(row["options_json"])),
         message=row["message"],
+        progress=row["progress"],
         file_count=row["file_count"],
         created_at=row["created_at"],
         started_at=row["started_at"],
