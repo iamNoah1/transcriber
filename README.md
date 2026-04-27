@@ -11,7 +11,7 @@ cd backend
 uv sync
 cp ../.env.example ../.env
 # set JWT_SECRET, OWNER_OPEN_ID; leave AUTH_DISABLED=true for dev
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 3030
 ```
 
 ### Frontend
@@ -19,7 +19,7 @@ uv run uvicorn app.main:app --reload --port 8000
 ```bash
 cd web
 pnpm install
-pnpm dev       # http://localhost:5173, proxies /api to :8000
+pnpm dev       # http://localhost:5173, proxies /api to :3030
 ```
 
 ### Docker (full stack)
@@ -27,7 +27,7 @@ pnpm dev       # http://localhost:5173, proxies /api to :8000
 ```bash
 cp .env.example .env
 docker compose up --build
-# http://localhost:8000
+# http://localhost:3030
 ```
 
 ## Deployment (Coolify)

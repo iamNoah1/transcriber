@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cd backend
 uv sync                          # install deps
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 3030
 uv run pytest                    # all tests
 uv run pytest tests/test_pipeline.py::test_file_upload_worker_download  # single test
 ```
@@ -17,14 +17,14 @@ uv run pytest tests/test_pipeline.py::test_file_upload_worker_download  # single
 ```bash
 cd web
 pnpm install
-pnpm dev       # http://localhost:5173 — proxies /api → :8000
+pnpm dev       # http://localhost:5173 — proxies /api → :3030
 pnpm test      # Vitest
 pnpm build     # output to web/dist
 ```
 
 ### Docker (full stack)
 ```bash
-docker compose up --build        # http://localhost:8000
+docker compose up --build        # http://localhost:3030
 ```
 
 ## Architecture
@@ -56,7 +56,7 @@ Volume mounts in production:
 - `/app/storage` — job file storage
 
 ### Frontend
-Vite + React + React Router. Four pages: `Login`, `Home` (submit form), `Jobs` (list), `JobDetail` (poll status, download). All API calls go through `web/src/api.ts` which redirects to `/login` on 401. The dev proxy in `vite.config.ts` forwards `/api` to `:8000`.
+Vite + React + React Router. Four pages: `Login`, `Home` (submit form), `Jobs` (list), `JobDetail` (poll status, download). All API calls go through `web/src/api.ts` which redirects to `/login` on 401. The dev proxy in `vite.config.ts` forwards `/api` to `:3030`.
 
 ## Environment variables
 See `.env.example`. Required at runtime: `OWNER_OPEN_ID`, `JWT_SECRET`. For production also: `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `AUTH_DISABLED=false`.
