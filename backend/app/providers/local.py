@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -18,12 +19,14 @@ log = logging.getLogger(__name__)
 
 def _run_cli(name: str, cmd: list[str], on_output: OnOutput | None = None) -> None:
     log.debug("$ %s", " ".join(cmd))
+    env = {**os.environ, "PYTHONWARNINGS": "default"}
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=0,
+        env=env,
     )
     assert proc.stdout is not None
     captured: list[str] = []

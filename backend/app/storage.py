@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import zipfile
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ class Storage:
     def sanitise_filename(name: str) -> str:
         name = name.replace("\x00", "")
         name = Path(name).name.strip()
+        name = re.sub(r"\s+", "_", name)
         return name or "upload"
 
     def single_output_file(self, job_id: str) -> Path | None:

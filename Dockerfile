@@ -27,7 +27,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # curl for HEALTHCHECK; yt-dlp pre-installed so audiotap skips its first-run download;
 # uv to manage the backend's Python deps.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
+ && apt-get install -y --no-install-recommends curl ca-certificates nodejs \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir yt-dlp uv==0.4.25
 
