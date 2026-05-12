@@ -10,7 +10,7 @@ from app.auth import install_auth, register_oauth_routes
 from app.config import get_settings
 from app.db import Database
 from app.jobs import router as jobs_router
-from app.providers.local import LocalProvider
+from app.providers.local import LocalProvider, check_tool_versions
 from app.storage import Storage
 from app.workers import JobRunner, Worker, start_retention_loop
 
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
 
     log = logging.getLogger(__name__)
     log.info("Starting transcribe-cloud (env=%s, storage=%s)", settings.env, settings.storage_dir)
+    check_tool_versions()
 
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.storage_dir.mkdir(parents=True, exist_ok=True)

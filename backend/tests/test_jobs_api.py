@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app import memory
 from app.main import create_app
 
 
@@ -120,3 +121,26 @@ def test_download_409_when_not_done(api):
     created = api.post("/api/jobs", json={"urls": ["u"], "options": {}}).json()
     r = api.get(f"/api/jobs/{created['id']}/download")
     assert r.status_code == 409
+
+
+def test_create_url_job_503_when_low_memory(api, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(memory, "available_ram_mb", lambda: 100)
+    r = api.post("/api/jobs", json={"urls": ["u"], "options": {"model": "tiny"}})
+    assert r.status_code == 503
+    assert "memory" in r.json()["detail"].lower()
+    # No row should have been written
+    assert api.get("/api/jobs").json() == []
+
+
+def test_create_file_job_503_when_low_memory(api, monkeypatch: pytest.MonkeyPatch, tmp_path):
+    monkeypatch.setattr(memory, "available_ram_mb", lambda: 100)
+    audio = tmp_path / "sample.mp3"
+    audio.write_bytes(b"ID3\x00" + b"\x00" * 128)
+    r = api.post(
+        "/api/jobs/files",
+        files=[("files", ("sample.mp3", audio.read_bytes(), "audio/mpeg"))],
+        data={"options_json": '{"formats": ["txt"], "model": "large"}'},
+    )
+    assert r.status_code == 503
+    assert "memory" in r.json()["detail"].lower()
+    assert api.get("/api/jobs").json() == []

@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from app.db import Database
+from app.memory import insufficient_memory_message
 from app.providers.base import TranscriptionProvider
 from app.storage import Storage
 
@@ -93,6 +94,11 @@ class JobRunner:
             count_in = sum(1 for _ in paths.input.iterdir() if _.is_file())
             log.info("[job:%s] transcribing %d file(s), formats=%s, model=%s",
                      job_id, count_in, options["formats"], options.get("model"))
+
+            err = insufficient_memory_message(options.get("model"))
+            if err:
+                raise RuntimeError(err)
+
             self._run(self.db.update_job(
                 job_id, message=f"Transcribing {count_in} file(s)…", progress=None,
             ))

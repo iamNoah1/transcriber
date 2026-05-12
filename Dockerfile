@@ -1,6 +1,6 @@
 # Pinned upstream image versions — bump these when audiotap/whisperbatch release.
 ARG AUDIOTAP_VERSION=v0.2.1
-ARG WHISPERBATCH_VERSION=v0.3.1
+ARG WHISPERBATCH_VERSION=v0.4.0
 
 # ---- Stage 1: build the React SPA ----
 FROM node:20-alpine AS web-build

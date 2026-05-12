@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.auth import current_user
 from app.db import Database
+from app.memory import insufficient_memory_message
 from app.storage import Storage
 
 VALID_FORMATS = {"txt", "json", "srt", "vtt", "tsv"}
@@ -84,6 +85,10 @@ async def create_url_job(
     payload: UrlJobRequest,
     user: dict = Depends(current_user),
 ):
+    err = insufficient_memory_message(payload.options.model)
+    if err:
+        raise HTTPException(status_code=503, detail=err)
+
     db: Database = request.app.state.db
     storage: Storage = request.app.state.storage
     await db.upsert_user(open_id=user["open_id"], name=user.get("name"), email=None)
@@ -114,6 +119,10 @@ async def create_file_job(
         options = Options.model_validate_json(options_json)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"invalid options: {e}") from e
+
+    err = insufficient_memory_message(options.model)
+    if err:
+        raise HTTPException(status_code=503, detail=err)
 
     db: Database = request.app.state.db
     storage: Storage = request.app.state.storage

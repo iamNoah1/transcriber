@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app import memory
 from app.db import Database
 from app.storage import Storage
 from app.workers import JobRunner
@@ -81,6 +82,28 @@ async def test_run_job_marks_failed_on_exception(tmp_path: Path):
     row = await db.get_job(job_id)
     assert row["status"] == "failed"
     assert "boom" in row["message"]
+
+
+@pytest.mark.asyncio()
+async def test_run_job_fails_fast_on_low_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(memory, "available_ram_mb", lambda: 100)
+    db = Database(tmp_path / "db.sqlite"); await db.init()
+    await db.upsert_user(open_id="u", name=None, email=None)
+    storage = Storage(tmp_path)
+    provider = FakeProvider()
+    runner = JobRunner(db=db, storage=storage, provider=provider)
+    job_id = await db.insert_job(
+        user_id="u", input_kind="urls",
+        inputs_json=json.dumps(["https://youtu.be/a"]),
+        options_json=json.dumps({"formats": ["txt"], "model": "large"}),
+    )
+    storage.create_job_dirs(job_id)
+    await asyncio.get_event_loop().run_in_executor(None, runner.run_job, job_id)
+    row = await db.get_job(job_id)
+    assert row["status"] == "failed"
+    assert "memory" in row["message"].lower()
+    # Download happened (URL job), but transcribe must not have been invoked.
+    assert provider.transcribes == []
 
 
 @pytest.mark.asyncio()

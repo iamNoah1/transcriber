@@ -9,12 +9,40 @@ from typing import Callable
 
 OnOutput = Callable[[str], None]
 
+# Keep these in sync with the ARG values in the root Dockerfile.
+REQUIRED_AUDIOTAP_VERSION = "v0.2.1"
+REQUIRED_WHISPERBATCH_VERSION = "v0.4.0"
+
 # Both audiotap and whisperbatch use schollz/progressbar/v3, which emits \r-rewrites.
 # yt-dlp does the same. Splitting on either \r or \n lets us see those updates as
 # they happen rather than only at end-of-line boundaries.
 _LINE_BREAK = re.compile(r"[\r\n]")
 
 log = logging.getLogger(__name__)
+
+
+def check_tool_versions() -> None:
+    """Log a warning if installed tool versions don't match the pinned requirements."""
+    for binary, required in (
+        ("audiotap", REQUIRED_AUDIOTAP_VERSION),
+        ("whisperbatch", REQUIRED_WHISPERBATCH_VERSION),
+    ):
+        try:
+            result = subprocess.run(
+                [binary, "--version"], capture_output=True, text=True, timeout=5
+            )
+            output = (result.stdout + result.stderr).strip()
+            if required not in output:
+                log.warning(
+                    "%s version mismatch: expected %s, got %r — unexpected behaviour possible",
+                    binary, required, output,
+                )
+            else:
+                log.debug("%s version OK (%s)", binary, required)
+        except FileNotFoundError:
+            log.warning("%s not found in PATH — jobs will fail at runtime", binary)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("could not check %s version: %s", binary, exc)
 
 
 def _run_cli(name: str, cmd: list[str], on_output: OnOutput | None = None) -> None:
